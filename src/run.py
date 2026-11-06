@@ -28,6 +28,8 @@ class ProcessingRun:
         self.staging_dir: Path = resolve_path(cfg, staging)
         self.audit: list[dict] = []
         self.checks: list[dict] = []
+        self.canonical = None
+        self.analysis = dict()  # set by the Section 4 stage
 
     def prepare_staging(self) -> Path:
         """Create an empty staging folder."""
