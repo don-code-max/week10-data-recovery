@@ -164,6 +164,33 @@ class FailureHandlingTests(unittest.TestCase):
         problems = compare_tables(read_exports(out))
         self.assertTrue(problems, "altered export should fail comparison")
 
+import hashlib
+import shutil
+import tempfile
+
+from src.integrity import verify_input_hashes
+
+
+class InputIntegrityTests(unittest.TestCase):
+    def setUp(self) -> None:
+        full = json.loads(Path("data/manifest.json").read_text(encoding="utf-8"))
+        self.manifest = {"files": [e for e in full["files"]
+                                   if e["file"].endswith((".xlsx", ".parquet"))]}
+
+    def test_14_unchanged_inputs_pass(self):
+        self.assertEqual(verify_input_hashes(self.manifest, Path("data")), [])
+
+    def test_15_one_changed_byte_is_reported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for e in self.manifest["files"]:
+                shutil.copy(Path("data") / e["file"], tmp)
+            target = Path(tmp) / "country_records.xlsx"
+            raw = bytearray(target.read_bytes())
+            raw[-1] ^= 0xFF
+            target.write_bytes(bytes(raw))
+            problems = verify_input_hashes(self.manifest, Path(tmp))
+            self.assertTrue(any("country_records.xlsx" in p for p in problems))
+
 
 if __name__ == "__main__":
     unittest.main()
