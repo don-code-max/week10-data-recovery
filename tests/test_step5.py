@@ -8,6 +8,8 @@ import unittest
 from pathlib import Path
 from src.validation import validate_records
 from tests.test_step3 import raw
+from src.exports import read_exports
+from src.compare import compare_tables
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -147,6 +149,20 @@ class FailureHandlingTests(unittest.TestCase):
         result = self.run_main()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(canonical.read_bytes(), baseline)
+
+        
+    def test_12_corrupted_export_fails_comparison(self):
+        self.assertEqual(self.run_main().returncode, 0)
+        out = self.tmp / "outputs"
+        # Baseline: untouched exports agree with each other.
+        self.assertEqual(compare_tables(read_exports(out)), [])
+        # Corrupt one population value in canonical.json (records orientation).
+        json_path = out / "canonical.json"
+        records = json.loads(json_path.read_text(encoding="utf-8"))
+        records[0]["pop"] = int(records[0]["pop"]) + 1
+        json_path.write_text(json.dumps(records), encoding="utf-8")
+        problems = compare_tables(read_exports(out))
+        self.assertTrue(problems, "altered export should fail comparison")
 
 
 if __name__ == "__main__":
