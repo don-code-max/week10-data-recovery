@@ -5,6 +5,7 @@ import sys
 from typing import Callable
 
 from src.recover import stage_recover_inputs
+from src.analysis import stage_analysis
 from src.run import PipelineError, ProcessingRun
 
 Stage = Callable[[ProcessingRun], None]
@@ -14,7 +15,7 @@ def default_stages() -> list[Stage]:
     """Return the ordered processing stages (teammates add theirs here)."""
     return [
         stage_recover_inputs,   # Step 3: read, map, validate, quarantine, dedupe, compare
-        # stage_analysis,       # Step 4: pandas tables + NumPy matrix
+        stage_analysis,       # Step 4: pandas tables + NumPy matrix
         # stage_exports,        # Step 4/5: four exports, reload, compare
     ]
 
