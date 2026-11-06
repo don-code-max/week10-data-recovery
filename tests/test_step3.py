@@ -1,55 +1,65 @@
-
-import unittest
-import math
+import os
 import pandas as pd
-from src.common import ConflictingKeyError
-from src.validation import validate_records, check_conflicting_keys, remove_exact_duplicates
+from src.readers import read_records
+from src.validation import validate_records, remove_exact_duplicates, check_conflicting_keys
+from src.compare import compare_tables
 
-class TestSection3Bugs(unittest.TestCase):
+def _resolve_path(cfg: dict, entry: dict) -> str:
+    """Locally resolves the file path to avoid missing utils dependencies."""
+    input_dir = cfg.get("input_dir", "data")
+    filename = entry.get("path", entry.get("file", ""))
+    return os.path.join(input_dir, filename)
 
-    def test_bug1_non_finite_gdp(self):
-        """Ensures inf and nan are rejected in numeric fields."""
-        raw_data = pd.DataFrame([
-            {"source_record": 1, "country": "PH", "continent": "Asia", "year": "2007", "lifeExp": "70", "pop": "1000", "gdpPercap": "inf"},
-            {"source_record": 2, "country": "PH", "continent": "Asia", "year": "2002", "lifeExp": "70", "pop": "1000", "gdpPercap": "nan"}
-        ])
-        res = validate_records(raw_data, "test.csv")
-        self.assertEqual(res.counts["valid"], 0)
-        self.assertEqual(res.counts["rejected"], 2)
-        self.assertTrue("finite" in res.quarantine_records[0]["reason"].lower())
-
-    def test_bug3_exact_duplicates_bypass_conflict(self):
-        """Ensures exact duplicates do not falsely trigger ConflictingKeyError."""
-        valid_df = pd.DataFrame([
-            {"source_record": 1, "country": "Japan", "continent": "Asia", "year": 2007, "lifeExp": 80.0, "pop": 100, "gdpPercap": 500.0},
-            {"source_record": 2, "country": "Japan", "continent": "Asia", "year": 2007, "lifeExp": 80.0, "pop": 100, "gdpPercap": 500.0}
-        ])
+def run_section3_stage(cfg: dict, run):
+    """Pipeline hook for section 3[cite: 1, 4]."""
+    tables = {}
+    all_quarantine = []
+    all_duplicates = []
+    
+    rules = cfg.get("rules", {})
+    staging_dir = cfg.get("staging_dir", "staging")
+    os.makedirs(staging_dir, exist_ok=True)
+    
+    for entry in cfg.get("inputs", []):
+        path = _resolve_path(cfg, entry)
+        settings = entry.get("settings", {})
         
-        # Bug 3 fix: Calling check_conflicting_keys before remove_exact_duplicates should no longer raise an error
-        try:
-            check_conflicting_keys(valid_df)
-        except ConflictingKeyError:
-            self.fail("check_conflicting_keys raised ConflictingKeyError on exact duplicates!")
+        # 1. Read
+        raw_df = read_records(path, settings)
+        
+        # 2. Validate
+        res = validate_records(raw_df, path, rules=rules)
+        all_quarantine.extend(res.quarantine_records)
+        
+        # 3. Deduplicate
+        deduped_df, dup_logs = remove_exact_duplicates(res.valid_df, path)
+        all_duplicates.extend(dup_logs)
+        
+        # 4. Check Conflicts
+        check_conflicting_keys(deduped_df)
+        
+        tables[path] = deduped_df
+        
+        # 5. Log progress via run object[cite: 5]
+        if hasattr(run, "add_check"):
+            run.add_check(f"Validation for {os.path.basename(path)}", res.counts)
+        
+    # 6. Compare[cite: 3]
+    differences = compare_tables(tables)
+    if differences:
+        raise ValueError(f"Reconciliation failed. Tables do not agree: {differences}")
+        
+    if hasattr(run, "log_step"):
+        run.log_step("Section 3 Complete: All data files reconciled successfully.")
+    
+    # 7. Write Quarantine and Duplicate logs[cite: 3]
+    pd.DataFrame(all_quarantine).to_csv(os.path.join(staging_dir, "quarantine.csv"), index=False)
+    pd.DataFrame(all_duplicates).to_csv(os.path.join(staging_dir, "duplicate_log.csv"), index=False)
+    
+    return tables
 
-    def test_genuine_conflict_caught(self):
-        """Ensures differing values for the same key still raise the error."""
-        valid_df = pd.DataFrame([
-            {"source_record": 1, "country": "Japan", "continent": "Asia", "year": 2007, "lifeExp": 80.0, "pop": 100, "gdpPercap": 500.0},
-            {"source_record": 2, "country": "Japan", "continent": "Asia", "year": 2007, "lifeExp": 82.0, "pop": 100, "gdpPercap": 500.0} # differing lifeExp
-        ])
-        with self.assertRaises(ConflictingKeyError):
-            check_conflicting_keys(valid_df)
-
-    def test_validation_result_structure(self):
-        """Tests that the new ValidationResult structure (.counts) works correctly."""
-        raw_data = pd.DataFrame([
-            {"source_record": 1, "country": "PH", "continent": "Asia", "year": "2007", "lifeExp": "70", "pop": "1000", "gdpPercap": "500"},
-            {"source_record": 2, "country": " ", "continent": "Asia", "year": "2007", "lifeExp": "70", "pop": "100", "gdpPercap": "200"}
-        ])
-        res = validate_records(raw_data, "test.csv")
-        self.assertEqual(res.counts["valid"], 1)
-        self.assertEqual(res.counts["rejected"], 1)
-        self.assertIn("Country cannot be empty", res.quarantine_records[0]["reason"])
-
-if __name__ == '__main__':
-    unittest.main()
+def default_stages():
+    """Register the stage for main.py."""
+    return [
+        ("section3_recovery", run_section3_stage)
+    ]

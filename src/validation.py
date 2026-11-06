@@ -8,7 +8,7 @@ VALID_YEARS = set(range(1952, 2012, 5))
 
 @dataclass
 class ValidationResult:
-    """Holds the valid records, quarantined records, and their aggregate counts."""
+    """Holds valid rows, quarantine records, and counts dict."""
     valid_df: pd.DataFrame
     quarantine_records: list[dict]
     counts: dict
@@ -21,10 +21,13 @@ def _check_whole_number(val_str: str) -> bool:
         return False
 
 def validate_records(raw_df: pd.DataFrame, source_file: str, rules: dict = None) -> ValidationResult:
-    """
-    Validates records against domain rules and routes rejects to quarantine.
-    """
+    """Validates records, trims whitespace, and routes rejects to quarantine."""
     rules = rules or {}
+    
+    # Rules with fallback to constants[cite: 5]
+    allowed_continents = set(rules.get("continents", VALID_CONTINENTS))
+    allowed_years = set(rules.get("years", VALID_YEARS))
+    
     valid_rows = []
     quarantine = []
     
@@ -46,34 +49,34 @@ def validate_records(raw_df: pd.DataFrame, source_file: str, rules: dict = None)
         reason = None
         
         if not country:
-            reason = "Country cannot be empty"
-        elif continent not in VALID_CONTINENTS:
-            reason = f"Continent '{continent}' is not in the allowed list"
-        elif not _check_whole_number(year_str) or int(float(year_str)) not in VALID_YEARS:
-            reason = f"Year '{year_str}' is not a valid 5-year interval integer"
+            reason = "Country is empty after trimming"
+        elif continent not in allowed_continents:
+            reason = f"Continent '{continent}' invalid"
+        elif not _check_whole_number(year_str) or int(float(year_str)) not in allowed_years:
+            reason = f"Year '{year_str}' is invalid or not in allowed rules"
         else:
             try:
                 life_exp = float(lifeExp_str)
                 if not (math.isfinite(life_exp) and 0 < life_exp <= 120):
-                    reason = f"lifeExp {life_exp} must be finite and between 0 and 120"
+                    reason = f"lifeExp '{life_exp}' out of bounds (0, 120] or non-finite"
             except ValueError:
-                reason = f"lifeExp '{lifeExp_str}' cannot be parsed as a float"
+                reason = "lifeExp unparseable"
                 
             if not reason:
                 try:
                     pop_val = float(pop_str)
                     if not (math.isfinite(pop_val) and pop_val.is_integer() and pop_val > 0):
-                        reason = f"pop '{pop_val}' must be a finite positive integer"
+                        reason = "pop must be finite, whole, and > 0"
                 except ValueError:
-                    reason = f"pop '{pop_str}' cannot be parsed as a number"
+                    reason = "pop unparseable"
                     
             if not reason:
                 try:
                     gdp = float(gdpPercap_str)
                     if not (math.isfinite(gdp) and gdp > 0):
-                        reason = f"gdpPercap '{gdp}' must be finite and positive"
+                        reason = "gdpPercap must be finite and > 0"
                 except ValueError:
-                    reason = f"gdpPercap '{gdpPercap_str}' cannot be parsed as a float"
+                    reason = "gdpPercap unparseable"
 
         if reason:
             quarantine.append({
@@ -106,7 +109,7 @@ def validate_records(raw_df: pd.DataFrame, source_file: str, rules: dict = None)
     )
 
 def remove_exact_duplicates(valid_df: pd.DataFrame, source_file: str) -> tuple[pd.DataFrame, list[dict]]:
-    """Removes exact 6-field duplicates and logs every dropped copy."""
+    """Removes 6-field duplicates and logs them."""
     data_cols = ['country', 'continent', 'year', 'lifeExp', 'pop', 'gdpPercap']
     seen = {}
     deduped_rows = []
@@ -133,10 +136,12 @@ def remove_exact_duplicates(valid_df: pd.DataFrame, source_file: str) -> tuple[p
     return deduped_df, duplicate_logs
 
 def check_conflicting_keys(valid_df: pd.DataFrame) -> None:
-    """Raises ConflictingKeyError if the same (country, year) has differing metrics."""
+    """Raises ConflictingKeyError if matching (country, year) have differing values."""
     if valid_df.empty:
         return
     six = ["country", "continent", "year", "lifeExp", "pop", "gdpPercap"]
+    
+    # Fix 3: Drop identical rows first so exact duplicates don't falsely trigger conflicts
     distinct = valid_df.drop_duplicates(subset=six)
     
     if distinct.duplicated(subset=["country", "year"]).any():
