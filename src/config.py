@@ -1,4 +1,4 @@
-"""Load, default, and validate the JSON run configuration."""
+"""Run configuration."""
 from __future__ import annotations
 
 import json
@@ -15,11 +15,11 @@ DEFAULTS: dict = {
 
 
 class ConfigError(ValueError):
-    """Raised when the configuration is missing, malformed, or incomplete."""
+    """Invalid configuration."""
 
 
 def load_config(path: Path | str) -> dict:
-    """Read a JSON config file, apply defaults, validate it, and return a dict."""
+    """Load and validate a config file."""
     path = Path(path)
     if not path.is_file():
         raise ConfigError(f"Config file not found: {path}")
@@ -37,7 +37,7 @@ def load_config(path: Path | str) -> dict:
 
 
 def validate_config(cfg: dict) -> None:
-    """Check required keys, input entries, formats, and the reporting year."""
+    """Raise ConfigError if cfg is invalid."""
     missing = REQUIRED_KEYS - set(cfg)
     if missing:
         raise ConfigError(f"Missing config keys: {sorted(missing)}")
@@ -58,9 +58,23 @@ def validate_config(cfg: dict) -> None:
     year = cfg["reporting_year"]
     if isinstance(year, bool) or not isinstance(year, int):
         raise ConfigError("'reporting_year' must be a whole number.")
+    allowed_years = cfg.get("allowed_years")
+    if allowed_years and year not in set(allowed_years):
+        raise ConfigError(f"'reporting_year' {year} is not in allowed_years.")
+    output = resolve_path(cfg, cfg["output_dir"]).resolve()
+    staging = resolve_path(
+        cfg, cfg.get("staging_dir") or f"{cfg['output_dir']}_staging"
+    ).resolve()
+    if staging == output or staging in output.parents:
+        raise ConfigError("'staging_dir' must be a separate folder from 'output_dir'.")
 
 
 def resolve_path(cfg: dict, relative: str) -> Path:
-    """Resolve a config path against the folder that holds the config file."""
+    """Resolve a path against the config folder."""
     candidate = Path(relative)
     return candidate if candidate.is_absolute() else Path(cfg["base_dir"]) / candidate
+
+
+def input_path(cfg: dict, entry: dict) -> Path:
+    """Full path of an input file."""
+    return resolve_path(cfg, str(Path(cfg.get("data_dir", "")) / entry["path"]))

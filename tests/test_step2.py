@@ -1,17 +1,17 @@
-"""Automated checks for the config loader and the ProcessingRun class."""
+"""Tests for config and run."""
 import json
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from src.config import ConfigError, load_config
+from src.config import ConfigError, input_path, load_config
 from src.pipeline import run_pipeline
 from src.run import PipelineError, ProcessingRun
 
 
 def write_config(folder: Path, drop: tuple = (), **overrides) -> Path:
-    """Write a small config file into a temp folder and return its path."""
+    """Write a test config and return its path."""
     cfg = {"inputs": [{"name": "csv", "path": "x.csv", "format": "csv"}], "output_dir": "out"}
     cfg.update(overrides)
     for key in drop:
@@ -45,6 +45,29 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaises(ConfigError):
             load_config("no_such_config.json")
 
+    def test_year_outside_allowed_years_stops(self):
+        years = [1997, 2007]
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(ConfigError):
+                load_config(write_config(Path(tmp), reporting_year=2008, allowed_years=years))
+            cfg = load_config(write_config(Path(tmp), reporting_year=1997, allowed_years=years))
+            self.assertEqual(cfg["reporting_year"], 1997)
+
+    def test_staging_must_be_separate_from_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(ConfigError):
+                load_config(write_config(Path(tmp), staging_dir="out"))
+            with self.assertRaises(ConfigError):
+                load_config(write_config(Path(tmp), output_dir="out/final", staging_dir="out"))
+            cfg = load_config(write_config(Path(tmp), staging_dir="out/staging"))
+            self.assertEqual(cfg["staging_dir"], "out/staging")
+
+    def test_input_path_uses_data_dir(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = load_config(write_config(Path(tmp), data_dir="data"))
+            expected = Path(cfg["base_dir"]) / "data" / "x.csv"
+            self.assertEqual(input_path(cfg, cfg["inputs"][0]), expected)
+
 
 class ProcessingRunTests(unittest.TestCase):
     def make_run(self, tmp: str) -> ProcessingRun:
@@ -75,6 +98,47 @@ class ProcessingRunTests(unittest.TestCase):
             with self.assertRaises(PipelineError):
                 run.publish()
             self.assertFalse((run.output_dir / "a.csv").exists())
+
+    def test_run_with_no_checks_does_not_pass(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = self.make_run(tmp)
+            self.assertFalse(run.all_passed)
+            with self.assertRaises(PipelineError):
+                run.publish()
+
+    def test_publish_removes_old_failure_report(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = self.make_run(tmp)
+            run.output_dir.mkdir(parents=True, exist_ok=True)
+            (run.output_dir / "failed_validation_report.csv").write_text("old failure")
+            (run.staging_dir / "a.csv").write_text("x")
+            run.add_check("ok", 1, 1)
+            run.publish()
+            self.assertFalse((run.output_dir / "failed_validation_report.csv").exists())
+
+    def test_empty_run_exits_1_and_publishes_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = load_config(write_config(Path(tmp)))
+            self.assertEqual(run_pipeline(cfg), 1)
+            self.assertFalse((Path(tmp) / "out" / "audit_log.csv").exists())
+            self.assertTrue((Path(tmp) / "out" / "failed_validation_report.csv").exists())
+
+    def test_passing_stage_publishes_and_exits_0(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = load_config(write_config(Path(tmp)))
+
+            def passing_stage(run: ProcessingRun) -> None:
+                run.add_check("ok", 1, 1)
+
+            with patch("src.pipeline.default_stages", return_value=[passing_stage]):
+                self.assertEqual(run_pipeline(cfg), 0)
+            self.assertTrue((Path(tmp) / "out" / "validation.csv").exists())
+
+    def test_setup_error_in_staging_exits_1(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = load_config(write_config(Path(tmp)))
+            with patch.object(ProcessingRun, "prepare_staging", side_effect=OSError("disk full")):
+                self.assertEqual(run_pipeline(cfg), 1)
 
     def test_failed_run_returns_1_and_keeps_old_outputs(self):
         with tempfile.TemporaryDirectory() as tmp:
