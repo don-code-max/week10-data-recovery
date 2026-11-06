@@ -9,9 +9,8 @@ DSA4153 group project. Recovers one clean dataset from CSV, Excel, JSON and Parq
 | 1 | Don Derek Magpantay | don-code-max | don-code-max <donderek06@gmail.com> | CSV and Excel readers, format configuration, reader checks |
 | 2 | Carlos Aaron Lopez | carlosaaronlopez | carlosaaronlopez <carlosaaron.lopez@ust.edu.ph> | Nested JSON and Parquet readers, column mapping, normalization checks |
 | 3 | Daniel Nico Del Mundo | nico-ust | nico-ust <danielnico.delmundo@ust.edu.ph> | Row validation, quarantine, duplicates/conflicts, rejection checks |
-| 4 | Robert Gabriel Roldan | RobertRoldan1109 | RobertRoldan1109 <robertgabriel.roldan@ust.edu.ph> | pandas analysis, NumPy matrix operations, calculation checks |
-| 5 | Luis Nikolai Cruzado | toky0na | toky0na <luisnikolai.cruzado@ust.edu.ph> | Export/reload comparison, staging, CLI/audit integration, failure checks |
-## Setup
+| 4 | Robert Gabriel Roldan | RobertRoldan1109 | Robert <robert@example.com> | pandas analysis, NumPy matrix operations, calculation checks |
+| 5 | Luis Nikolai Cruzado | lucycruzado | Luis <luisnikolai.cruzado@ust.edu.ph> | Export/reload comparison, staging, CLI/audit integration, failure checks |
 
 ## Setup
 
