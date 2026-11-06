@@ -45,7 +45,11 @@ class FailureHandlingTests(unittest.TestCase):
     def test_01_normal_four_format_recovery(self):
         result = self.run_main()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertTrue((self.tmp / "outputs" / "canonical.csv").exists())
+        out = self.tmp / "outputs"
+        for name in ("canonical.csv", "canonical.xlsx",
+                     "canonical.json", "canonical.parquet"):
+            with self.subTest(export=name):
+                self.assertTrue((out / name).exists(), f"{name} was not exported")
 
     def test_02_missing_file(self):
         (self.tmp / "data" / "country_records.csv").unlink()
@@ -164,6 +168,26 @@ class FailureHandlingTests(unittest.TestCase):
         problems = compare_tables(read_exports(out))
         self.assertTrue(problems, "altered export should fail comparison")
 
+    def test_13_bad_row_quarantined_in_normal_run(self):
+        # Add one invalid record (fractional year) to the CSV input.
+        self.append_row(self.make_row(country="Badland", year="2007.5"))
+        cfg_path = self.tmp / "config.json"
+        cfg_path.write_text(json.dumps(self.cfg), encoding="utf-8")
+        # The program expects exactly 24 rejections (handout total). For this
+        # run only, raise that to 25 to account for the one row we added.
+        code = (
+            "import runpy, sys; import src.recover as r; "
+            "r.EXPECTED_QUARANTINED = 25; "
+            f"sys.argv = ['main.py', '--config', {str(cfg_path)!r}]; "
+            "runpy.run_path('main.py', run_name='__main__')"
+        )
+        result = subprocess.run([sys.executable, "-c", code],
+                                capture_output=True, text=True, cwd=ROOT)
+        # Normal run succeeds and the bad row is listed in quarantine.csv.
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Badland", self.quarantine_text())
+        # 25 quarantined records + 1 header line = 26 lines.
+        self.assertEqual(self.count_lines("quarantine.csv"), 26)
 
 if __name__ == "__main__":
     unittest.main()

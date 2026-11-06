@@ -1,0 +1,21 @@
+test_01_normal_four_format_recovery (tests.test_step5.FailureHandlingTests.test_01_normal_four_format_recovery) ... ok
+test_02_missing_file (tests.test_step5.FailureHandlingTests.test_02_missing_file) ... ok
+test_03_unsupported_format (tests.test_step5.FailureHandlingTests.test_03_unsupported_format) ... ok
+test_04_missing_column (tests.test_step5.FailureHandlingTests.test_04_missing_column) ... ok
+test_05_missing_key (tests.test_step5.FailureHandlingTests.test_05_missing_key) ... ok
+test_06_unparseable_number (tests.test_step5.FailureHandlingTests.test_06_unparseable_number) ... ok
+test_07_fractional_year_and_population (tests.test_step5.FailureHandlingTests.test_07_fractional_year_and_population) ... ok
+test_08_non_finite_and_out_of_range (tests.test_step5.FailureHandlingTests.test_08_non_finite_and_out_of_range) ... ok
+test_09_exact_duplicates (tests.test_step5.FailureHandlingTests.test_09_exact_duplicates) ... ok
+test_10_conflicting_keys (tests.test_step5.FailureHandlingTests.test_10_conflicting_keys) ... ok
+test_11_reordered_records (tests.test_step5.FailureHandlingTests.test_11_reordered_records) ... ok
+test_12_corrupted_export_fails_comparison (tests.test_step5.FailureHandlingTests.test_12_corrupted_export_fails_comparison) ... C:\week10\week10-data-recovery\src\exports.py:58: Pandas4Warning: The 'convert_dates' keyword in read_json is deprecated and will be removed in a future version. Pass dtype=False to disable type conversion, or parse date columns with pd.to_datetime after reading.
+  "json": pd.read_json(folder / FILES["json"], orient="records", convert_dates=False),
+C:\week10\week10-data-recovery\src\exports.py:58: Pandas4Warning: The 'convert_dates' keyword in read_json is deprecated and will be removed in a future version. Pass dtype=False to disable type conversion, or parse date columns with pd.to_datetime after reading.
+  "json": pd.read_json(folder / FILES["json"], orient="records", convert_dates=False),
+ok
+
+----------------------------------------------------------------------
+Ran 12 tests in 15.723s
+
+OK
