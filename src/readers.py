@@ -31,7 +31,6 @@ def read_csv_records(path: str, settings: dict) -> pd.DataFrame:
     
     encoding = settings.get("encoding", "cp1252")
     comment_char = settings.get("comment", "#")
-    # Updated config keys here:
     sep = settings.get("sep", settings.get("separator", ",")) 
     
     df = pd.read_csv(path, encoding=encoding, comment=comment_char, sep=sep, dtype=str, keep_default_na=False)
@@ -44,32 +43,41 @@ def read_excel_records(path: str, settings: dict) -> pd.DataFrame:
     if not os.path.exists(path):
         raise FileLevelError(f"File not found: {path}")
         
-    # Updated config keys here:
     sheet_name = settings.get("sheet_name", settings.get("sheet", "observations"))
     engine = settings.get("engine", "openpyxl")
     
     df = pd.read_excel(path, sheet_name=sheet_name, engine=engine, dtype=str, keep_default_na=False)
     return _map_and_normalize(df, settings.get("source_to_canonical", {}))
 
-# ... [read_json_records and read_parquet_records remain standard] ...
 def read_json_records(path: str, settings: dict) -> pd.DataFrame:
-    if not os.path.exists(path): raise FileLevelError(f"File not found: {path}")
+    if not os.path.exists(path):
+        raise FileLevelError(f"File not found: {path}")
+        
     with open(path, "r", encoding=settings.get("encoding", "utf-8")) as f:
         data = json.load(f)
+        
     flat_records = []
     for item in data.get("records", []):
         row = {}
-        for k, v in item.get("identity", {}).items(): row[f"identity.{k}"] = "" if v is None else str(v)
-        for k, v in item.get("measures", {}).items(): row[f"measures.{k}"] = "" if v is None else str(v)
+        for k, v in item.get("identity", {}).items():
+            row[f"identity.{k}"] = "" if v is None else str(v)
+        for k, v in item.get("measures", {}).items():
+            row[f"measures.{k}"] = "" if v is None else str(v)
         for k, v in item.items():
-            if k not in ["identity", "measures"]: row[k] = "" if v is None else str(v)
+            if k not in ["identity", "measures"]:
+                row[k] = "" if v is None else str(v)
         flat_records.append(row)
+        
     return _map_and_normalize(pd.DataFrame(flat_records), settings.get("source_to_canonical", {}))
 
 def read_parquet_records(path: str, settings: dict) -> pd.DataFrame:
-    if not os.path.exists(path): raise FileLevelError(f"File not found: {path}")
+    if not os.path.exists(path):
+        raise FileLevelError(f"File not found: {path}")
+        
     df = pd.read_parquet(path, engine=settings.get("engine", "pyarrow"))
-    for c in df.columns: df[c] = df[c].apply(lambda v: "" if pd.isna(v) or v is None else str(v))
+    for c in df.columns:
+        df[c] = df[c].apply(lambda v: "" if pd.isna(v) or v is None else str(v))
+        
     return _map_and_normalize(df, settings.get("source_to_canonical", {}))
 
 def read_records(path: str, settings: dict) -> pd.DataFrame:
@@ -77,7 +85,7 @@ def read_records(path: str, settings: dict) -> pd.DataFrame:
     readers = {
         "csv": read_csv_records,
         "excel": read_excel_records,
-        "xlsx": read_excel_records, # Added xlsx here
+        "xlsx": read_excel_records,
         "json": read_json_records,
         "parquet": read_parquet_records
     }
