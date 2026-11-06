@@ -164,6 +164,54 @@ class FailureHandlingTests(unittest.TestCase):
         problems = compare_tables(read_exports(out))
         self.assertTrue(problems, "altered export should fail comparison")
 
+    def test_13_bad_row_quarantined_in_normal_run(self):
+        # Add one invalid record (fractional year) to the CSV input.
+        self.append_row(self.make_row(country="Badland", year="2007.5"))
+        cfg_path = self.tmp / "config.json"
+        cfg_path.write_text(json.dumps(self.cfg), encoding="utf-8")
+        # The program expects exactly 24 rejections (handout total). For this
+        # run only, raise that to 25 to account for the one row we added.
+        code = (
+            "import runpy, sys; import src.recover as r; "
+            f"r.EXPECTED_QUARANTINED = 25; "
+            f"sys.argv = ['main.py', '--config', {str(cfg_path)!r}]; "
+            "runpy.run_path('main.py', run_name='__main__')"
+        )
+        result = subprocess.run([sys.executable, "-c", code],
+                                capture_output=True, text=True, cwd=ROOT)
+        # Normal run succeeds and the bad row is listed in quarantine.csv.
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Badland", self.quarantine_text())
+        # 25 quarantined records + 1 header line = 26 lines.
+        self.assertEqual(self.count_lines("quarantine.csv"), 26)
+
+import hashlib
+import shutil
+import tempfile
+
+from src.integrity import verify_input_hashes
+
+
+class InputIntegrityTests(unittest.TestCase):
+    def setUp(self) -> None:
+        full = json.loads(Path("data/manifest.json").read_text(encoding="utf-8"))
+        self.manifest = {"files": [e for e in full["files"]
+                                   if e["file"].endswith((".xlsx", ".parquet"))]}
+
+    def test_14_unchanged_inputs_pass(self):
+        self.assertEqual(verify_input_hashes(self.manifest, Path("data")), [])
+
+    def test_15_one_changed_byte_is_reported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for e in self.manifest["files"]:
+                shutil.copy(Path("data") / e["file"], tmp)
+            target = Path(tmp) / "country_records.xlsx"
+            raw = bytearray(target.read_bytes())
+            raw[-1] ^= 0xFF
+            target.write_bytes(bytes(raw))
+            problems = verify_input_hashes(self.manifest, Path(tmp))
+            self.assertTrue(any("country_records.xlsx" in p for p in problems))
+
 
 if __name__ == "__main__":
     unittest.main()
