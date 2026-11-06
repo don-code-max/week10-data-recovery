@@ -1,0 +1,80 @@
+{
+  "data_dir": "data",
+  "output_dir": "outputs",
+  "staging_dir": "outputs/staging",
+  "reporting_year": 2007,
+  "inputs": [
+    {
+      "name": "csv",
+      "format": "csv",
+      "path": "country_records.csv",
+      "file": "country_records.csv",
+      "encoding": "cp1252",
+      "sep": ";",
+      "comment": "#",
+      "source_to_canonical": {
+        "CountryName": "country",
+        "ContinentName": "continent",
+        "ObservationYear": "year",
+        "LifeYears": "lifeExp",
+        "PopulationPersons": "pop",
+        "GDPPerPerson": "gdpPercap"
+      }
+    },
+    {
+      "name": "xlsx",
+      "format": "xlsx",
+      "path": "country_records.xlsx",
+      "file": "country_records.xlsx",
+      "sheet_name": "observations",
+      "source_to_canonical": {
+        "country_name": "country",
+        "continent_name": "continent",
+        "observation_year": "year",
+        "life_expectancy": "lifeExp",
+        "population": "pop",
+        "gdp_per_capita": "gdpPercap"
+      }
+    },
+    {
+      "name": "json",
+      "format": "json",
+      "path": "country_records.json",
+      "file": "country_records.json",
+      "encoding": "utf-8",
+      "record_path": "records",
+      "source_to_canonical": {
+        "identity.country": "country",
+        "identity.continent": "continent",
+        "identity.year": "year",
+        "measures.lifeExp": "lifeExp",
+        "measures.pop": "pop",
+        "measures.gdpPercap": "gdpPercap"
+      }
+    },
+    {
+      "name": "parquet",
+      "format": "parquet",
+      "path": "country_records.parquet",
+      "file": "country_records.parquet",
+      "source_to_canonical": {
+        "COUNTRY": "country",
+        "CONTINENT": "continent",
+        "YEAR": "year",
+        "LIFE_EXP": "lifeExp",
+        "POPULATION": "pop",
+        "GDP_PER_CAPITA": "gdpPercap"
+      }
+    }
+  ],
+  "canonical_schema": {
+    "country": "string",
+    "continent": "string",
+    "year": "int64",
+    "lifeExp": "float64",
+    "pop": "int64",
+    "gdpPercap": "float64"
+  },
+  "allowed_continents": ["Africa", "Americas", "Asia", "Europe", "Oceania"],
+  "allowed_years": [1952, 1957, 1962, 1967, 1972, 1977, 1982, 1987, 1992, 1997, 2002, 2007]
+}
