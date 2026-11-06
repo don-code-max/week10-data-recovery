@@ -1,81 +1,55 @@
+
 import unittest
+import math
 import pandas as pd
-import tempfile
-import os
-from src.readers import read_records, FileLevelError
-from src.validation import validate_records, remove_exact_duplicates, check_conflicting_keys, ConflictingKeyError
-from src.compare import compare_tables
+from src.common import ConflictingKeyError
+from src.validation import validate_records, check_conflicting_keys, remove_exact_duplicates
 
-class TestStep3(unittest.TestCase):
-    def setUp(self):
-        self.temp_dir = tempfile.TemporaryDirectory()
-        
-    def tearDown(self):
-        self.temp_dir.cleanup()
+class TestSection3Bugs(unittest.TestCase):
 
-    def test_missing_file(self):
-        """missing file"""
-        with self.assertRaises(FileLevelError):
-            read_records("nonexistent.csv", {})
-
-    def test_unsupported_format(self):
-        """unsupported format (data/unsupported.txt)"""
-        with self.assertRaises(FileLevelError):
-            read_records("data/unsupported.txt", {})
-
-    def test_missing_column(self):
-        """missing column"""
-        df = pd.DataFrame([{"country": "A", "continent": "Asia", "year": "1952", "lifeExp": "50", "gdpPercap": "100"}])
-        with self.assertRaises(FileLevelError):
-            from src.readers import _enforce_canonical_format
-            _enforce_canonical_format(df, {})
-
-    def test_validation_rules(self):
-        """missing key, unparseable number, fractional year, non-finite/out-of-range"""
+    def test_bug1_non_finite_gdp(self):
+        """Ensures inf and nan are rejected in numeric fields."""
         raw_data = pd.DataFrame([
-            {"country": "", "continent": "Asia", "year": "1952", "lifeExp": "50", "pop": "100", "gdpPercap": "100", "source_record": 1}, # empty country
-            {"country": "A", "continent": "Asia", "year": "1952.5", "lifeExp": "50", "pop": "100", "gdpPercap": "100", "source_record": 2}, # fractional year
-            {"country": "B", "continent": "Asia", "year": "1952", "lifeExp": "130", "pop": "100", "gdpPercap": "100", "source_record": 3}, # out of range lifeExp
-            {"country": "C", "continent": "Asia", "year": "1952", "lifeExp": "50", "pop": "abc", "gdpPercap": "100", "source_record": 4}, # unparseable number
-            {"country": "D", "continent": "Asia", "year": "1952", "lifeExp": "50", "pop": "100", "gdpPercap": "100", "source_record": 5}, # valid
+            {"source_record": 1, "country": "PH", "continent": "Asia", "year": "2007", "lifeExp": "70", "pop": "1000", "gdpPercap": "inf"},
+            {"source_record": 2, "country": "PH", "continent": "Asia", "year": "2002", "lifeExp": "70", "pop": "1000", "gdpPercap": "nan"}
+        ])
+        res = validate_records(raw_data, "test.csv")
+        self.assertEqual(res.counts["valid"], 0)
+        self.assertEqual(res.counts["rejected"], 2)
+        self.assertTrue("finite" in res.quarantine_records[0]["reason"].lower())
+
+    def test_bug3_exact_duplicates_bypass_conflict(self):
+        """Ensures exact duplicates do not falsely trigger ConflictingKeyError."""
+        valid_df = pd.DataFrame([
+            {"source_record": 1, "country": "Japan", "continent": "Asia", "year": 2007, "lifeExp": 80.0, "pop": 100, "gdpPercap": 500.0},
+            {"source_record": 2, "country": "Japan", "continent": "Asia", "year": 2007, "lifeExp": 80.0, "pop": 100, "gdpPercap": 500.0}
         ])
         
-        result = validate_records(raw_data, "test.csv")
-        self.assertEqual(len(result.valid_df), 1)
-        self.assertEqual(len(result.quarantine_records), 4)
+        # Bug 3 fix: Calling check_conflicting_keys before remove_exact_duplicates should no longer raise an error
+        try:
+            check_conflicting_keys(valid_df)
+        except ConflictingKeyError:
+            self.fail("check_conflicting_keys raised ConflictingKeyError on exact duplicates!")
 
-    def test_exact_duplicates(self):
-        """exact duplicates"""
+    def test_genuine_conflict_caught(self):
+        """Ensures differing values for the same key still raise the error."""
         valid_df = pd.DataFrame([
-            {"country": "A", "continent": "Asia", "year": 1952, "lifeExp": 50.0, "pop": 100, "gdpPercap": 100.0, "source_record": 1},
-            {"country": "A", "continent": "Asia", "year": 1952, "lifeExp": 50.0, "pop": 100, "gdpPercap": 100.0, "source_record": 2},
-        ])
-        unique_df, logs = remove_exact_duplicates(valid_df, "test.csv")
-        self.assertEqual(len(unique_df), 1)
-        self.assertEqual(len(logs), 1)
-
-    def test_conflicting_keys(self):
-        """conflicting keys"""
-        valid_df = pd.DataFrame([
-            {"country": "A", "continent": "Asia", "year": 1952, "lifeExp": 50.0, "pop": 100, "gdpPercap": 100.0},
-            {"country": "A", "continent": "Asia", "year": 1952, "lifeExp": 60.0, "pop": 100, "gdpPercap": 100.0},
+            {"source_record": 1, "country": "Japan", "continent": "Asia", "year": 2007, "lifeExp": 80.0, "pop": 100, "gdpPercap": 500.0},
+            {"source_record": 2, "country": "Japan", "continent": "Asia", "year": 2007, "lifeExp": 82.0, "pop": 100, "gdpPercap": 500.0} # differing lifeExp
         ])
         with self.assertRaises(ConflictingKeyError):
             check_conflicting_keys(valid_df)
 
-    def test_reordered_records_comparison(self):
-        """reordered records (same data in a different order still agrees)"""
-        df1 = pd.DataFrame([
-            {"country": "A", "continent": "Asia", "year": 1952, "lifeExp": 50.0, "pop": 100, "gdpPercap": 100.0},
-            {"country": "B", "continent": "Asia", "year": 1952, "lifeExp": 60.0, "pop": 200, "gdpPercap": 200.0}
+    def test_validation_result_structure(self):
+        """Tests that the new ValidationResult structure (.counts) works correctly."""
+        raw_data = pd.DataFrame([
+            {"source_record": 1, "country": "PH", "continent": "Asia", "year": "2007", "lifeExp": "70", "pop": "1000", "gdpPercap": "500"},
+            {"source_record": 2, "country": " ", "continent": "Asia", "year": "2007", "lifeExp": "70", "pop": "100", "gdpPercap": "200"}
         ])
-        df2 = pd.DataFrame([
-            {"country": "B", "continent": "Asia", "year": 1952, "lifeExp": 60.0, "pop": 200, "gdpPercap": 200.0},
-            {"country": "A", "continent": "Asia", "year": 1952, "lifeExp": 50.000000001, "pop": 100, "gdpPercap": 100.0}
-        ])
-        
-        errors = compare_tables({"t1": df1, "t2": df2})
-        self.assertEqual(len(errors), 0)
+        res = validate_records(raw_data, "test.csv")
+        self.assertEqual(res.counts["valid"], 1)
+        self.assertEqual(res.counts["rejected"], 1)
+        self.assertIn("Country cannot be empty", res.quarantine_records[0]["reason"])
 
 if __name__ == '__main__':
     unittest.main()

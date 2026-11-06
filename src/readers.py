@@ -1,110 +1,101 @@
-import pandas as pd
-import json
+
 import os
+import json
+import pandas as pd
 from src.common import FileLevelError
 
-def _enforce_canonical_format(df: pd.DataFrame, settings: dict) -> pd.DataFrame:
-    """Maps columns to canonical names, checks requirements, and enforces string types."""
-    mapping = settings.get("source_to_canonical", {})
-    df = df.rename(columns=mapping)
+CANONICAL_COLUMNS = ['country', 'continent', 'year', 'lifeExp', 'pop', 'gdpPercap']
+
+def _map_and_normalize(df_raw: pd.DataFrame, source_to_canonical: dict) -> pd.DataFrame:
+    mapped_sources = {s_col: c_col for s_col, c_col in source_to_canonical.items()}
+    missing = [col for col in CANONICAL_COLUMNS if col not in mapped_sources.values()]
+    if missing:
+        raise FileLevelError(f"Missing required canonical column mappings: {missing}")
+
+    df = df_raw.rename(columns=source_to_canonical)
     
-    canonical_cols = ["country", "continent", "year", "lifeExp", "pop", "gdpPercap"]
-    for col in canonical_cols:
+    for col in CANONICAL_COLUMNS:
         if col not in df.columns:
-            raise FileLevelError(f"Missing required column: {col}")
-            
-    for col in canonical_cols:
-        # Convert to string safely, don't let None become "None", nulls become ""
-        df[col] = df[col].apply(lambda x: "" if pd.isna(x) or x is None else str(x))
-        df[col] = df[col].replace("None", "")
-        
-    return df[canonical_cols + ["source_record"]]
+            raise FileLevelError(f"Missing required column in file: {col}")
+
+    res = df[CANONICAL_COLUMNS].copy()
+    res.insert(0, 'source_record', range(1, len(res) + 1))
+    
+    # Prevents converting legitimate "None" strings to empty strings
+    for col in CANONICAL_COLUMNS:
+        res[col] = res[col].apply(lambda v: "" if pd.isna(v) or v is None else str(v))
+    return res
 
 def read_csv_records(path: str, settings: dict) -> pd.DataFrame:
-    """Parses CSV keeping original values, drops extra export_note column."""
     if not os.path.exists(path):
-        raise FileLevelError(f"Missing file: {path}")
+        raise FileLevelError(f"File not found: {path}")
     
-    encoding = settings.get("encoding", "cp1252")
-    separator = settings.get("sep", settings.get("separator", ","))
-    
-    # Read manually to accurately count source_record ignoring comments/headers
-    records = []
-    with open(path, 'r', encoding=encoding) as f:
-        header = None
-        record_idx = 1
-        for line in f:
-            line = line.strip('\n')
-            if not line or line.startswith("#"):
-                continue
-            if header is None:
-                header = line.split(separator)
-                continue
-            
-            row_data = line.split(separator)
-            row_dict = dict(zip(header, row_data))
-            row_dict["source_record"] = record_idx
-            if "export_note" in row_dict:
-                del row_dict["export_note"]
-            records.append(row_dict)
-            record_idx += 1
-            
-    df = pd.DataFrame(records)
-    return _enforce_canonical_format(df, settings)
+    df = pd.read_csv(
+        path,
+        encoding=settings.get("encoding", "cp1252"),
+        comment=settings.get("comment", "#"),
+        sep=settings.get("separator", ","),
+        dtype=str,
+        keep_default_na=False
+    )
+    if "export_note" in df.columns:
+        df = df.drop(columns=["export_note"])
+        
+    return _map_and_normalize(df, settings.get("source_to_canonical", {}))
 
 def read_excel_records(path: str, settings: dict) -> pd.DataFrame:
-    """Parses Excel using openpyxl, reading only the observations sheet."""
     if not os.path.exists(path):
-        raise FileLevelError(f"Missing file: {path}")
+        raise FileLevelError(f"File not found: {path}")
         
-    engine = settings.get("engine", "openpyxl")
-    sheet = settings.get("sheet_name", settings.get("sheet", "observations"))
-    
-    df = pd.read_excel(path, engine=engine, sheet_name=sheet)
-    df["source_record"] = range(1, len(df) + 1)
-    return _enforce_canonical_format(df, settings)
+    # Bug 2 Fix: dtype=str, keep_default_na=False prevents automatic float conversion
+    df = pd.read_excel(
+        path,
+        sheet_name=settings.get("sheet", "observations"),
+        engine=settings.get("engine", "openpyxl"),
+        dtype=str,
+        keep_default_na=False
+    )
+    return _map_and_normalize(df, settings.get("source_to_canonical", {}))
 
 def read_json_records(path: str, settings: dict) -> pd.DataFrame:
-    """Parses JSON flattening identity and measures, ignoring outer metadata."""
     if not os.path.exists(path):
-        raise FileLevelError(f"Missing file: {path}")
+        raise FileLevelError(f"File not found: {path}")
         
-    with open(path, 'r', encoding=settings.get("encoding", "utf-8")) as f:
+    with open(path, "r", encoding=settings.get("encoding", "utf-8")) as f:
         data = json.load(f)
         
-    raw_records = data.get("records", [])
+    records = data.get("records", [])
     flat_records = []
-    for i, rec in enumerate(raw_records, start=1):
-        flat = {"source_record": i}
-        if "identity" in rec:
-            flat.update(rec["identity"])
-        if "measures" in rec:
-            flat.update(rec["measures"])
-        flat_records.append(flat)
+    for item in records:
+        row = {}
+        # Flatten structure safely
+        for k, v in item.get("identity", {}).items():
+            row[f"identity.{k}"] = v
+        for k, v in item.get("measures", {}).items():
+            row[f"measures.{k}"] = v
+        for k, v in item.items():
+            if k not in ["identity", "measures"]:
+                row[k] = v
+        flat_records.append(row)
         
     df = pd.DataFrame(flat_records)
-    return _enforce_canonical_format(df, settings)
+    return _map_and_normalize(df, settings.get("source_to_canonical", {}))
 
 def read_parquet_records(path: str, settings: dict) -> pd.DataFrame:
-    """Parses Parquet using pyarrow."""
     if not os.path.exists(path):
-        raise FileLevelError(f"Missing file: {path}")
+        raise FileLevelError(f"File not found: {path}")
         
-    engine = settings.get("engine", "pyarrow")
-    df = pd.read_parquet(path, engine=engine)
-    df["source_record"] = range(1, len(df) + 1)
-    return _enforce_canonical_format(df, settings)
+    df = pd.read_parquet(path, engine=settings.get("engine", "pyarrow"))
+    return _map_and_normalize(df, settings.get("source_to_canonical", {}))
 
 def read_records(path: str, settings: dict) -> pd.DataFrame:
-    """Picks a reader by format; raises FileLevelError for unsupported formats."""
-    ext = os.path.splitext(path)[1].lower()
-    if ext == '.csv':
-        return read_csv_records(path, settings)
-    elif ext in ['.xls', '.xlsx', '.excel']:
-        return read_excel_records(path, settings)
-    elif ext == '.json':
-        return read_json_records(path, settings)
-    elif ext == '.parquet':
-        return read_parquet_records(path, settings)
-    else:
-        raise FileLevelError(f"Unsupported format: {ext}")
+    fmt = settings.get("format", "").lower()
+    readers = {
+        "csv": read_csv_records,
+        "excel": read_excel_records,
+        "json": read_json_records,
+        "parquet": read_parquet_records
+    }
+    if fmt not in readers:
+        raise FileLevelError(f"Unsupported format: {fmt}")
+    return readers[fmt](path, settings)
