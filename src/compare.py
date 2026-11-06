@@ -1,33 +1,38 @@
+"""Compare the recovered tables by key."""
+from __future__ import annotations
+
 import numpy as np
 import pandas as pd
 
+KEY = ["country", "year"]
+EXACT = ["continent", "pop"]
+FLOATS = ["lifeExp", "gdpPercap"]
+
+
 def compare_tables(tables: dict[str, pd.DataFrame], atol: float = 1e-8) -> list[str]:
-    """Compares the 4 recovered tables exactly. Floats use atol 1e-8."""
-    if len(tables) <= 1:
+    """Return a list of differences (empty list = all tables agree).
+
+    Tables are matched by (country, year). Text and integer columns must be
+    exactly equal; floats use atol with rtol=0.
+    """
+    names = list(tables)
+    if len(names) < 2:
         return []
-        
-    differences = []
-    sorted_tables = {}
-    
-    for name, df in tables.items():
-        clean_df = df.copy()
-        clean_df = clean_df.sort_values(by=['country', 'year']).reset_index(drop=True)
-        sorted_tables[name] = clean_df
-        
-    base_name = list(sorted_tables.keys())[0]
-    base_df = sorted_tables[base_name]
-    
-    for target_name, target_df in list(sorted_tables.items())[1:]:
-        if len(base_df) != len(target_df):
-            differences.append(f"Row count mismatch: {base_name} ({len(base_df)}) vs {target_name} ({len(target_df)})")
+    ordered = {n: tables[n].sort_values(KEY).reset_index(drop=True) for n in names}
+    base_name = names[0]
+    base = ordered[base_name]
+    problems: list[str] = []
+    for name in names[1:]:
+        other = ordered[name]
+        if len(base) != len(other):
+            problems.append(f"Row count differs: {base_name}={len(base)}, {name}={len(other)}")
             continue
-            
-        for col in ['country', 'continent', 'year', 'pop']:
-            if not base_df[col].equals(target_df[col]):
-                differences.append(f"Column '{col}' mismatch between {base_name} and {target_name}")
-                
-        for col in ['lifeExp', 'gdpPercap']:
-            if not np.allclose(base_df[col], target_df[col], atol=atol, rtol=0.0):
-                differences.append(f"Float column '{col}' exceeds tolerance between {base_name} and {target_name}")
-                
-    return differences
+        for col in KEY + EXACT:
+            if not (base[col].to_numpy() == other[col].to_numpy()).all():
+                problems.append(f"Column '{col}' differs between {base_name} and {name}")
+        for col in FLOATS:
+            if not np.allclose(base[col].astype(float), other[col].astype(float),
+                               atol=atol, rtol=0.0):
+                problems.append(f"Column '{col}' differs beyond atol={atol} "
+                                f"between {base_name} and {name}")
+    return problems
