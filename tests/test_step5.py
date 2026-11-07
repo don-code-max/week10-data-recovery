@@ -146,6 +146,7 @@ class FailureHandlingTests(unittest.TestCase):
             raw += b"\n"
         lines = raw.splitlines(keepends=True)
         self.csv_path().write_bytes(b"".join(lines[:3] + lines[3:][::-1]))
+        self.cfg["verify_input_hashes"] = False
         result = self.run_main()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(canonical.read_bytes(), baseline)
@@ -167,6 +168,7 @@ class FailureHandlingTests(unittest.TestCase):
     def test_13_bad_row_quarantined_in_normal_run(self):
         # Add one invalid record (fractional year) to the CSV input.
         self.append_row(self.make_row(country="Badland", year="2007.5"))
+        self.cfg["verify_input_hashes"] = False
         cfg_path = self.tmp / "config.json"
         cfg_path.write_text(json.dumps(self.cfg), encoding="utf-8")
         # The program expects exactly 24 rejections (handout total). For this
@@ -184,6 +186,18 @@ class FailureHandlingTests(unittest.TestCase):
         self.assertIn("Badland", self.quarantine_text())
         # 25 quarantined records + 1 header line = 26 lines.
         self.assertEqual(self.count_lines("quarantine.csv"), 26)
+    def test_16_changed_input_byte_stops_run(self):
+           raw = bytearray(self.csv_path().read_bytes())
+           raw[-1] ^= 0xFF  # flip one byte; the file size stays the same
+           self.csv_path().write_bytes(bytes(raw))
+           result = self.run_main()
+           self.assert_run_stopped(result)
+           self.assertIn("SHA-256", result.stderr)
+
+    def test_17_normal_run_records_integrity_check(self):
+           self.assertEqual(self.run_main().returncode, 0)
+           text = (self.tmp / "outputs" / "validation.csv").read_text(encoding="utf-8")
+           self.assertIn("input files match manifest SHA-256 hashes", text)
 
 import hashlib
 import shutil
