@@ -1,0 +1,6 @@
+member,git_identity,branch,code_symbol,code_path,code_commit,test_path,test_commit,review_reference
+Carlos,carlosaaronlopez <carlosaaron.lopez@ust.edu.ph>,step2-config-engine,load_config,src/config.py,e42d00079f9120e6d74a0c22dac4d07da32e56b4,tests/test_step2.py,e42d00079f9120e6d74a0c22dac4d07da32e56b4,https://github.com/don-code-max/week10-data-recovery/pull/4
+Nico,nico-ust <danielnico.delmundo@ust.edu.ph>,step3-recovery,validate_records,src/validation.py,c547db28e3cb71e327f01b6d839f55a6f5ce3702,tests/test_step3.py,c547db28e3cb71e327f01b6d839f55a6f5ce3702,https://github.com/don-code-max/week10-data-recovery/pull/5
+Robert,Robert <robert@example.com>,rob-task4-analysis,stage_analysis,src/analysis.py,619c338740b6f151e5811d0b35d3583f50264144,tests/test_step4.py,c4736321479ec310f832a39848d54b54477cbe76,https://github.com/don-code-max/week10-data-recovery/pull/4
+Luis,Luis <luisnikolai.cruzado@ust.edu.ph>,member5-input-integrity,verify_input_hashes,src/integrity.py,24be14d8d56d572d3f25f69bbc0d5edb5edb65a1,tests/test_step5.py,24be14d8d56d572d3f25f69bbc0d5edb5edb65a1,
+Don,don-code-max <donderek06@gmail.com>,step1-readers,read_csv_records,src/readers.py,244a5e1959fa34511d7ea8c000eef3743a21831a,tests/test_readers.py,8afd39e455d798c037149359773b94507f1ffc19,https://github.com/don-code-max/week10-data-recovery/pull/1
